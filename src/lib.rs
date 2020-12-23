@@ -1,9 +1,12 @@
+#[cfg(feature = "ws")]
+pub mod websocket;
+
 use serde::{Deserialize, Serialize};
 
 pub use serde_json::Number;
 
 /// Represents JSON-RPC protocol versions.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ProtocolVersion {
     TwoPointO,
 }
@@ -35,10 +38,19 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
 }
 
 /// Represents a JSON-RPC request ID.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum RequestId {
     String(String),
     Number(Number),
+}
+
+impl std::hash::Hash for RequestId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            RequestId::String(s) => state.write(s.as_bytes()),
+            RequestId::Number(n) => state.write(n.to_string().as_bytes()),
+        }
+    }
 }
 
 impl Serialize for RequestId {
@@ -72,24 +84,63 @@ impl<'a> Deserialize<'a> for RequestId {
 }
 
 /// Represents a JSON-RPC request.
-#[derive(Debug, Serialize, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Request<P> {
     pub jsonrpc: ProtocolVersion,
-    pub id: Option<RequestId>,
+    pub id: RequestId,
     pub method: String,
     pub params: P,
 }
 
+impl<P> Request<P> {
+    pub fn map<Q, F: FnOnce(P) -> Q>(self, f: F) -> Request<Q> {
+        Request {
+            jsonrpc: self.jsonrpc,
+            id: self.id,
+            method: self.method,
+            params: f(self.params),
+        }
+    }
+}
+
+/// Represents a JSON-RPC notification.
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
+pub struct Notification<P> {
+    pub jsonrpc: ProtocolVersion,
+    pub method: String,
+    pub params: P,
+}
+
+impl<P> Notification<P> {
+    pub fn map<Q, F: FnOnce(P) -> Q>(self, f: F) -> Notification<Q> {
+        Notification {
+            jsonrpc: self.jsonrpc,
+            method: self.method,
+            params: f(self.params),
+        }
+    }
+}
+
 /// Represents a JSON-RPC successful response.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize)]
 pub struct ResultRes<R> {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
     pub result: R,
 }
 
+impl<R> ResultRes<R> {
+    pub fn map<T, F: FnOnce(R) -> T>(self, f: F) -> ResultRes<T> {
+        ResultRes {
+            jsonrpc: self.jsonrpc,
+            id: self.id,
+            result: f(self.result),
+        }
+    }
+}
+
 /// Represents a JSON-RPC failed response.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Serialize)]
 pub struct ErrorRes<E> {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
@@ -98,9 +149,53 @@ pub struct ErrorRes<E> {
     pub data: Option<E>,
 }
 
+impl<E> ErrorRes<E> {
+    pub fn map<T, F: FnOnce(Option<E>) -> Option<T>>(self, f: F) -> ErrorRes<T> {
+        ErrorRes {
+            jsonrpc: self.jsonrpc,
+            id: self.id,
+            code: self.code,
+            message: self.message,
+            data: f(self.data),
+        }
+    }
+}
+
 /// Represents a JSON-RPC response which can be successful or failed.
-#[derive(Debug, Eq, PartialEq)]
-pub struct Response<R, E = ()>(std::result::Result<ResultRes<R>, ErrorRes<E>>);
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Response<R = serde_json::Value, E = ()>(std::result::Result<ResultRes<R>, ErrorRes<E>>);
+
+impl<R, E> Response<R, E> {
+    pub fn id(&self) -> &RequestId {
+        match self {
+            Response(Ok(res)) => &res.id,
+            Response(Err(res)) => &res.id,
+        }
+    }
+
+    pub fn map<T, F: FnOnce(R) -> T>(self, f: F) -> Response<T, E> {
+        match self {
+            Response(Ok(res)) => Response(Ok(res.map(f))),
+            Response(Err(res)) => Response(Err(res)),
+        }
+    }
+}
+
+impl<R, E> Serialize for Response<R, E>
+where
+    R: Serialize,
+    E: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Response(Ok(res)) => res.serialize(serializer),
+            Response(Err(res)) => res.serialize(serializer),
+        }
+    }
+}
 
 impl<'a, R, E> Deserialize<'a> for Response<R, E>
 where
@@ -166,7 +261,7 @@ mod tests {
             jsonrpc: ProtocolVersion::TwoPointO,
             method: "method1".to_string(),
             params: &json!([]),
-            id: Some(RequestId::String("1".to_string())),
+            id: RequestId::String("1".to_string()),
         };
         let val = serde_json::to_value(req);
 
