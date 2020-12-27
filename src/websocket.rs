@@ -48,7 +48,7 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(
         Request<serde_json::Value>,
-        oneshot::Sender<Result<Option<Response<serde_json::Value, serde_json::Value>>, String>>,
+        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
     )>,
 
     client_notify_req_tx:
@@ -72,7 +72,7 @@ impl Client {
         })
     }
 
-    pub async fn request<P, R, E>(&self, req: Request<P>) -> Result<Option<Response<R, E>>, String>
+    pub async fn request<P, R, E>(&self, req: Request<P>) -> Result<Response<R, E>, String>
     where
         P: Serialize,
         R: DeserializeOwned,
@@ -94,7 +94,7 @@ impl Client {
         let raw_res = client_rx.await.map_err(|err| err.to_string())?;
 
         let res = match raw_res? {
-            Some(Response(Ok(res))) => {
+            Response(Ok(res)) => {
                 let result: R =
                     serde_json::from_value(res.result).map_err(|err| err.to_string())?;
 
@@ -104,10 +104,10 @@ impl Client {
                     result,
                 };
 
-                Some(Response(Ok(res)))
+                Response(Ok(res))
             }
 
-            Some(Response(Err(res))) => {
+            Response(Err(res)) => {
                 let data: Option<E> = if let Some(data) = res.data {
                     serde_json::from_value(data).map_err(|err| err.to_string())?
                 } else {
@@ -122,10 +122,8 @@ impl Client {
                     data,
                 };
 
-                Some(Response(Err(res)))
+                Response(Err(res))
             }
-
-            None => None,
         };
 
         Ok(res)
@@ -149,7 +147,7 @@ async fn client_task(
     ws_stream: WebSocketStream<TcpStream>,
     client_req_rx: mpsc::UnboundedReceiver<(
         Request<serde_json::Value>,
-        oneshot::Sender<Result<Option<Response<serde_json::Value, serde_json::Value>>, String>>,
+        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
     )>,
     client_notify_req_rx: mpsc::UnboundedReceiver<
         mpsc::UnboundedSender<Notification<serde_json::Value>>,
@@ -159,7 +157,7 @@ async fn client_task(
 
     let mut pending_requests: HashMap<
         RequestId,
-        oneshot::Sender<Result<Option<Response<serde_json::Value, serde_json::Value>>, String>>,
+        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
     > = HashMap::new();
 
     let mut notification_txs: Vec<mpsc::UnboundedSender<Notification<serde_json::Value>>> = vec![];
@@ -208,7 +206,7 @@ async fn client_task(
                                     .expect("failed to deserialize jsonrpc response");
 
                             if let Some(tx) = pending_requests.remove(res.id()) {
-                                tx.send(Ok(Some(res))).unwrap();
+                                tx.send(Ok(res)).unwrap();
                             }
                         } else {
                             let notf: Notification<serde_json::Value> = serde_json::from_value(value)
@@ -337,8 +335,7 @@ mod test {
                 params: AddParams { a: 1, b: 2 },
             })
             .await
-            .expect("failed deserializing test server response")
-            .expect("expected test server response");
+            .expect("failed deserializing test server response");
 
         println!("{:?}", res);
     }
