@@ -85,7 +85,7 @@ impl<'a> Deserialize<'a> for RequestId {
 
 /// Represents a JSON-RPC request.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct Request<P> {
+pub struct Request<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
     pub method: String,
@@ -105,7 +105,7 @@ impl<P> Request<P> {
 
 /// Represents a JSON-RPC notification.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct Notification<P> {
+pub struct Notification<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
     pub method: String,
     pub params: P,
@@ -163,7 +163,9 @@ impl<E> ErrorRes<E> {
 
 /// Represents a JSON-RPC response which can be successful or failed.
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Response<R = serde_json::Value, E = ()>(std::result::Result<ResultRes<R>, ErrorRes<E>>);
+pub struct Response<R = serde_json::Value, E = serde_json::Value>(
+    std::result::Result<ResultRes<R>, ErrorRes<E>>,
+);
 
 impl<R, E> Response<R, E> {
     pub fn id(&self) -> &RequestId {

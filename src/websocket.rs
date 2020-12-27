@@ -12,7 +12,7 @@ use crate::{ErrorRes, Notification, Request, RequestId, Response, ResultRes};
 
 /// Stream of JSON-RPC notifications.
 pub struct NotificationStream<P> {
-    rx: mpsc::UnboundedReceiver<Notification<serde_json::Value>>,
+    rx: mpsc::UnboundedReceiver<Notification>,
     _p: std::marker::PhantomData<P>,
 }
 
@@ -46,13 +46,9 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
 /// JSON-RPC client.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client_req_tx: mpsc::UnboundedSender<(
-        Request<serde_json::Value>,
-        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
-    )>,
+    client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>,
 
-    client_notify_req_tx:
-        mpsc::UnboundedSender<mpsc::UnboundedSender<Notification<serde_json::Value>>>,
+    client_notify_req_tx: mpsc::UnboundedSender<mpsc::UnboundedSender<Notification>>,
 }
 
 impl Client {
@@ -145,22 +141,15 @@ impl Client {
 
 async fn client_task(
     ws_stream: WebSocketStream<TcpStream>,
-    client_req_rx: mpsc::UnboundedReceiver<(
-        Request<serde_json::Value>,
-        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
-    )>,
-    client_notify_req_rx: mpsc::UnboundedReceiver<
-        mpsc::UnboundedSender<Notification<serde_json::Value>>,
-    >,
+    client_req_rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response, String>>)>,
+    client_notify_req_rx: mpsc::UnboundedReceiver<mpsc::UnboundedSender<Notification>>,
 ) {
     log::debug!("spawned websocket client task");
 
-    let mut pending_requests: HashMap<
-        RequestId,
-        oneshot::Sender<Result<Response<serde_json::Value, serde_json::Value>, String>>,
-    > = HashMap::new();
+    let mut pending_requests: HashMap<RequestId, oneshot::Sender<Result<Response, String>>> =
+        HashMap::new();
 
-    let mut notification_txs: Vec<mpsc::UnboundedSender<Notification<serde_json::Value>>> = vec![];
+    let mut notification_txs: Vec<mpsc::UnboundedSender<Notification>> = vec![];
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
     let mut client_req_rx = client_req_rx.fuse();
@@ -202,14 +191,14 @@ async fn client_task(
                         };
 
                         if is_response {
-                            let res: Response<serde_json::Value, serde_json::Value> = serde_json::from_value(value)
+                            let res: Response = serde_json::from_value(value)
                                     .expect("failed to deserialize jsonrpc response");
 
                             if let Some(tx) = pending_requests.remove(res.id()) {
                                 tx.send(Ok(res)).unwrap();
                             }
                         } else {
-                            let notf: Notification<serde_json::Value> = serde_json::from_value(value)
+                            let notf: Notification = serde_json::from_value(value)
                                 .expect("failed to deserialize jsonrpc notification");
 
                             for tx in &notification_txs {
@@ -271,7 +260,7 @@ mod test {
                     while let Some(Ok(msg)) = ws_stream.next().await {
                         let msg_body = msg.into_text().expect("expected text messages");
 
-                        let rpc_req: Request<serde_json::Value> = serde_json::from_str(&msg_body)
+                        let rpc_req: Request = serde_json::from_str(&msg_body)
                             .expect("failed to parse JSONRPC message");
 
                         let rpc_res = match rpc_req.method.as_str() {
