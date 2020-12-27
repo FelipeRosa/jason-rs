@@ -181,6 +181,20 @@ impl<R, E> Response<R, E> {
             Response(Err(res)) => Response(Err(res)),
         }
     }
+
+    pub fn as_result(&self) -> &std::result::Result<ResultRes<R>, ErrorRes<E>> {
+        &self.0
+    }
+
+    pub fn into_result(self) -> std::result::Result<ResultRes<R>, ErrorRes<E>> {
+        self.0
+    }
+}
+
+impl<R, E> Into<std::result::Result<ResultRes<R>, ErrorRes<E>>> for Response<R, E> {
+    fn into(self) -> std::result::Result<ResultRes<R>, ErrorRes<E>> {
+        self.0
+    }
 }
 
 impl<R, E> Serialize for Response<R, E>
