@@ -1,5 +1,6 @@
 use std::{collections::HashMap, task::Poll};
 
+use async_trait::async_trait;
 use futures::{SinkExt, Stream, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{
@@ -8,7 +9,7 @@ use tokio::{
 };
 use tokio_tungstenite::{tungstenite, WebSocketStream};
 
-use crate::{ErrorRes, Notification, Request, RequestId, Response, ResultRes};
+use crate::{ErrorRes, Notification, Request, RequestId, Response, ResultRes, Transport};
 
 /// Stream of JSON-RPC notifications.
 pub struct NotificationStream<P> {
@@ -136,6 +137,18 @@ impl Client {
             rx,
             _p: std::marker::PhantomData::default(),
         }
+    }
+}
+
+#[async_trait]
+impl Transport for Client {
+    async fn request<P, R, E>(&self, req: Request<P>) -> Result<Response<R, E>, String>
+    where
+        P: Serialize + Send,
+        R: DeserializeOwned,
+        E: DeserializeOwned,
+    {
+        self.request(req).await
     }
 }
 

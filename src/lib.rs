@@ -1,9 +1,19 @@
 #[cfg(feature = "ws")]
 pub mod websocket;
 
-use serde::{Deserialize, Serialize};
+use async_trait::async_trait;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 pub use serde_json::Number;
+
+#[async_trait]
+pub trait Transport {
+    async fn request<P, R, E>(&self, req: Request<P>) -> Result<Response<R, E>, String>
+    where
+        P: Serialize + Send,
+        R: DeserializeOwned,
+        E: DeserializeOwned;
+}
 
 /// Represents JSON-RPC protocol versions.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
