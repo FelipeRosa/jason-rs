@@ -1,15 +1,14 @@
 use std::{collections::HashMap, task::Poll};
 
-use async_trait::async_trait;
 use futures::{SinkExt, Stream, StreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use tokio::{
     net::TcpStream,
     sync::{mpsc, oneshot},
 };
 use tokio_tungstenite::{tungstenite, WebSocketStream};
 
-use crate::{ErrorRes, Notification, Request, RequestId, Response, ResultRes, Transport};
+use crate::{Notification, Request, RequestId, Response, Transport};
 
 /// Stream of JSON-RPC notifications.
 pub struct NotificationStream<P> {
@@ -69,63 +68,6 @@ impl Client {
         })
     }
 
-    pub async fn request<P, R, E>(&self, req: Request<P>) -> Result<Response<R, E>, String>
-    where
-        P: Serialize,
-        R: DeserializeOwned,
-        E: DeserializeOwned,
-    {
-        let (client_tx, client_rx) = oneshot::channel();
-
-        let req = Request {
-            jsonrpc: req.jsonrpc,
-            id: req.id,
-            method: req.method,
-            params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
-        };
-
-        self.client_req_tx
-            .send((req, client_tx))
-            .map_err(|err| err.to_string())?;
-
-        let raw_res = client_rx.await.map_err(|err| err.to_string())?;
-
-        let res = match raw_res? {
-            Response(Ok(res)) => {
-                let result: R =
-                    serde_json::from_value(res.result).map_err(|err| err.to_string())?;
-
-                let res = ResultRes {
-                    jsonrpc: res.jsonrpc,
-                    id: res.id,
-                    result,
-                };
-
-                Response(Ok(res))
-            }
-
-            Response(Err(res)) => {
-                let data: Option<E> = if let Some(data) = res.data {
-                    serde_json::from_value(data).map_err(|err| err.to_string())?
-                } else {
-                    None
-                };
-
-                let res = ErrorRes {
-                    jsonrpc: res.jsonrpc,
-                    id: res.id,
-                    code: res.code,
-                    message: res.message,
-                    data,
-                };
-
-                Response(Err(res))
-            }
-        };
-
-        Ok(res)
-    }
-
     pub fn notification_stream<P>(&self) -> NotificationStream<P>
     where
         P: DeserializeOwned,
@@ -140,15 +82,29 @@ impl Client {
     }
 }
 
-#[async_trait]
 impl Transport for Client {
-    async fn request<P, R, E>(&self, req: Request<P>) -> Result<Response<R, E>, String>
-    where
-        P: Serialize + Send,
-        R: DeserializeOwned,
-        E: DeserializeOwned,
-    {
-        self.request(req).await
+    fn request_raw(
+        &self,
+        req: Request,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response, String>>>> {
+        let client_req_tx = self.client_req_tx.clone();
+
+        Box::pin(async move {
+            let (client_tx, client_rx) = oneshot::channel();
+
+            let req = Request {
+                jsonrpc: req.jsonrpc,
+                id: req.id,
+                method: req.method,
+                params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
+            };
+
+            client_req_tx
+                .send((req, client_tx))
+                .map_err(|err| err.to_string())?;
+
+            client_rx.await.map_err(|err| err.to_string())?
+        })
     }
 }
 
@@ -229,11 +185,11 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::ProtocolVersion;
+    use crate::{ErrorRes, ProtocolVersion, ResultRes};
 
     use super::*;
 
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use tokio_tungstenite::tungstenite;
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -263,7 +219,7 @@ mod test {
                             serde_json::to_string(&Notification {
                                 jsonrpc: ProtocolVersion::TwoPointO,
                                 method: "test_notification".to_string(),
-                                params: serde_json::json!(16),
+                                params: serde_json::json!(16i32),
                             })
                             .unwrap(),
                         ))
@@ -336,6 +292,7 @@ mod test {
                 method: "add".to_string(),
                 params: AddParams { a: 1, b: 2 },
             })
+            .expect("failed serializing test server request")
             .await
             .expect("failed deserializing test server response");
 
