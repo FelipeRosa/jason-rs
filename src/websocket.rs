@@ -25,7 +25,7 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        match Stream::poll_next(std::pin::Pin::new(&mut self.rx), cx) {
+        match self.rx.poll_recv(cx) {
             Poll::Ready(Some(n)) => match serde_json::from_value(n.params) {
                 Ok(params) => Poll::Ready(Some(Notification {
                     jsonrpc: n.jsonrpc,
@@ -121,8 +121,9 @@ async fn client_task(
     let mut notification_txs: Vec<mpsc::UnboundedSender<Notification>> = vec![];
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
-    let mut client_req_rx = client_req_rx.fuse();
-    let mut client_notify_req_rx = client_notify_req_rx.fuse();
+
+    let mut client_req_rx = Box::pin(mpsc_receiver_stream(client_req_rx)).fuse();
+    let mut client_notify_req_rx = Box::pin(mpsc_receiver_stream(client_notify_req_rx)).fuse();
 
     while !client_req_rx.is_done() {
         tokio::select! {
@@ -179,6 +180,14 @@ async fn client_task(
                     Err(err) => log::error!("websocket stream error: {:?}", err)
                 }
             },
+        }
+    }
+}
+
+fn mpsc_receiver_stream<T: Unpin>(mut c: mpsc::UnboundedReceiver<T>) -> impl Stream<Item = T> {
+    async_stream::stream! {
+        while let Some(item) = c.recv().await {
+            yield item;
         }
     }
 }

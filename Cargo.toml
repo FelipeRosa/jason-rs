@@ -5,7 +5,7 @@ authors = ["Felipe Rosa <felipe.sgrosa@gmail.com>"]
 edition = "2018"
 
 [features]
-ws = ["tokio", "tokio-tungstenite"]
+ws = ["async-stream", "tokio", "tokio-tungstenite"]
 
 [dependencies]
 futures = { version = "0.3.8", default-features = false, features = ["std"] }
@@ -13,8 +13,9 @@ log = "0.4.11"
 serde = { version = "1.0.118", features = ["derive"] }
 serde_json = "1.0.60"
 
-tokio = { version = "0.3.6", default-features = false, features = ["rt", "sync", "net", "macros", "stream"], optional = true }
-tokio-tungstenite = { version = "0.12.0", default-features = false, features = ["connect"], optional = true }
+async-stream = { version = "0.3.0", optional = true }
+tokio = { version = "1.0.1", default-features = false, features = ["rt", "sync", "net", "macros"], optional = true }
+tokio-tungstenite = { git = "https://github.com/FelipeRosa/tokio-tungstenite", branch = "update-dependencies", default-features = false, features = ["connect"], optional = true }
 
 [dev-dependencies]
 lazy_static = "1.4.0"
