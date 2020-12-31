@@ -43,7 +43,7 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
     }
 }
 
-/// JSON-RPC client.
+/// JSON-RPC websocket client.
 #[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>,
@@ -86,9 +86,7 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response, String>>>> {
-        let client_req_tx = self.client_req_tx.clone();
-
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response, String>> + '_>> {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 
@@ -99,7 +97,7 @@ impl Transport for Client {
                 params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
             };
 
-            client_req_tx
+            self.client_req_tx
                 .send((req, client_tx))
                 .map_err(|err| err.to_string())?;
 
@@ -212,7 +210,7 @@ mod test {
     }
 
     async fn start_jsonrpc_test_server() -> tokio::task::JoinHandle<()> {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:3001")
             .await
             .expect("failed to start tcp listener");
 
@@ -282,7 +280,7 @@ mod test {
             start_jsonrpc_test_server().await;
         }
 
-        let ws = Client::new("ws://127.0.0.1:3000")
+        let ws = Client::new("ws://127.0.0.1:3001")
             .await
             .expect("failed connecting to jsonrpc test server");
 
@@ -303,7 +301,7 @@ mod test {
             })
             .expect("failed serializing test server request")
             .await
-            .expect("failed deserializing test server response");
+            .expect("test request failed");
 
         println!("{:?}", res);
     }

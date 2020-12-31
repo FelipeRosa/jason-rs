@@ -1,6 +1,9 @@
 #[cfg(feature = "ws")]
 pub mod websocket;
 
+#[cfg(feature = "http")]
+pub mod http;
+
 use futures::Future;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::pin::Pin;
@@ -8,7 +11,10 @@ use std::pin::Pin;
 pub use serde_json::Number;
 
 pub trait Transport {
-    fn request_raw(&self, req: Request) -> Pin<Box<dyn Future<Output = Result<Response, String>>>>;
+    fn request_raw(
+        &self,
+        req: Request,
+    ) -> Pin<Box<dyn Future<Output = Result<Response, String>> + '_>>;
 
     fn request<P, R, E>(
         &self,
