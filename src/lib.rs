@@ -4,6 +4,14 @@ pub mod websocket;
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(all(feature = "ipc", unix))]
+pub mod ipc;
+
+#[cfg(feature = "notification-stream")]
+mod notification_stream;
+
+mod helpers;
+
 use futures::Future;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::pin::Pin;

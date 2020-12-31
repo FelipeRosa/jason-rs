@@ -1,47 +1,13 @@
-use std::{collections::HashMap, task::Poll};
+use std::collections::HashMap;
 
-use futures::{SinkExt, Stream, StreamExt};
-use serde::de::DeserializeOwned;
+use futures::{SinkExt, StreamExt};
 use tokio::{
     net::TcpStream,
     sync::{mpsc, oneshot},
 };
 use tokio_tungstenite::{tungstenite, WebSocketStream};
 
-use crate::{Notification, Request, RequestId, Response, Transport};
-
-/// Stream of JSON-RPC notifications.
-pub struct NotificationStream<P> {
-    rx: mpsc::UnboundedReceiver<Notification>,
-    _p: std::marker::PhantomData<P>,
-}
-
-impl<P> Unpin for NotificationStream<P> {}
-
-impl<P: DeserializeOwned> Stream for NotificationStream<P> {
-    type Item = Notification<P>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        match self.rx.poll_recv(cx) {
-            Poll::Ready(Some(n)) => match serde_json::from_value(n.params) {
-                Ok(params) => Poll::Ready(Some(Notification {
-                    jsonrpc: n.jsonrpc,
-                    method: n.method,
-                    params,
-                })),
-
-                Err(_) => Poll::Pending,
-            },
-
-            Poll::Ready(None) => Poll::Ready(None),
-
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
+use crate::{helpers, Notification, Request, RequestId, Response, Transport};
 
 /// JSON-RPC websocket client.
 #[derive(Debug, Clone)]
@@ -65,19 +31,6 @@ impl Client {
             client_req_tx,
             client_notify_req_tx,
         })
-    }
-
-    pub fn notification_stream<P>(&self) -> NotificationStream<P>
-    where
-        P: DeserializeOwned,
-    {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.client_notify_req_tx.send(tx).unwrap();
-
-        NotificationStream {
-            rx,
-            _p: std::marker::PhantomData::default(),
-        }
     }
 }
 
@@ -105,6 +58,27 @@ impl Transport for Client {
     }
 }
 
+#[cfg(feature = "notification-stream")]
+mod notification_stream_impl {
+    use super::{mpsc, Client};
+
+    use serde::de::DeserializeOwned;
+
+    use crate::notification_stream::{NotificationStream, NotificationTransport};
+
+    impl NotificationTransport for Client {
+        fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.client_notify_req_tx.send(tx).unwrap();
+
+            NotificationStream::new(rx)
+        }
+    }
+}
+
+#[cfg(feature = "notification-stream")]
+pub use notification_stream_impl::*;
+
 async fn client_task(
     ws_stream: WebSocketStream<TcpStream>,
     client_req_rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response, String>>)>,
@@ -119,10 +93,10 @@ async fn client_task(
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
-    let mut client_req_rx = Box::pin(mpsc_receiver_stream(client_req_rx)).fuse();
-    let mut client_notify_req_rx = Box::pin(mpsc_receiver_stream(client_notify_req_rx)).fuse();
+    let mut client_req_rx = helpers::mpsc_receiver_stream(client_req_rx).fuse();
+    let mut client_notify_req_rx = helpers::mpsc_receiver_stream(client_notify_req_rx).fuse();
 
-    while !client_req_rx.is_done() {
+    loop {
         tokio::select! {
             c = client_req_rx.next() => if let Some((req, tx)) = c {
                 let req_str = serde_json::to_string(&req).unwrap();
@@ -191,17 +165,9 @@ async fn client_task(
     }
 }
 
-fn mpsc_receiver_stream<T: Unpin>(mut c: mpsc::UnboundedReceiver<T>) -> impl Stream<Item = T> {
-    async_stream::stream! {
-        while let Some(item) = c.recv().await {
-            yield item;
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use crate::{ErrorRes, ProtocolVersion, ResultRes};
+    use crate::{notification_stream::NotificationTransport, ErrorRes, ProtocolVersion, ResultRes};
 
     use super::*;
 
