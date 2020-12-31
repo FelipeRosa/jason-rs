@@ -47,7 +47,6 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
 #[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>,
-
     client_notify_req_tx: mpsc::UnboundedSender<mpsc::UnboundedSender<Notification>>,
 }
 
@@ -128,18 +127,18 @@ async fn client_task(
             c = client_req_rx.next() => if let Some((req, tx)) = c {
                 let req_str = serde_json::to_string(&req).unwrap();
 
-                    if pending_requests.insert(req.id.clone(), tx).is_some() {
-                        log::warn!("replaced existing pending request with the same ID");
-                    }
+                if pending_requests.insert(req.id.clone(), tx).is_some() {
+                    log::warn!("replaced existing pending request with the same ID");
+                }
 
-                    let result = ws_sink
-                        .send(tungstenite::Message::text(req_str))
-                        .await;
+                let result = ws_sink
+                    .send(tungstenite::Message::text(req_str))
+                    .await;
 
-                    if let Err(err) = result {
-                        pending_requests.remove(&req.id).unwrap().send(Err(err.to_string())).unwrap();
-                    }
-                },
+                if let Err(err) = result {
+                    pending_requests.remove(&req.id).unwrap().send(Err(err.to_string())).unwrap();
+                }
+            },
 
             n = client_notify_req_rx.next() => if let Some(tx) = n {
                 notification_txs.push(tx);
@@ -169,8 +168,18 @@ async fn client_task(
                             let notf: Notification = serde_json::from_value(value)
                                 .expect("failed to deserialize jsonrpc notification");
 
-                            for tx in &notification_txs {
-                                tx.send(notf.clone()).unwrap();
+                            let mut closed_tx_indexes = vec![];
+
+                            for (i, tx) in notification_txs.iter().enumerate() {
+                                if tx.is_closed() {
+                                    closed_tx_indexes.push(i);
+                                } else if let Err(_) = tx.send(notf.clone()) {
+                                    log::error!("websocket notification receive error");
+                                }
+                            }
+
+                            for ix in closed_tx_indexes {
+                                notification_txs.remove(ix);
                             }
                         }
                     }
@@ -221,52 +230,60 @@ mod test {
                         .await
                         .expect("failed to accept websocket connection");
 
-                    ws_stream
-                        .send(tokio_tungstenite::tungstenite::Message::text(
-                            serde_json::to_string(&Notification {
-                                jsonrpc: ProtocolVersion::TwoPointO,
-                                method: "test_notification".to_string(),
-                                params: serde_json::json!(16i32),
-                            })
-                            .unwrap(),
-                        ))
-                        .await
-                        .expect("failed to send test notification");
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(10));
 
-                    while let Some(Ok(msg)) = ws_stream.next().await {
-                        let msg_body = msg.into_text().expect("expected text messages");
+                    loop {
+                        tokio::select! {
+                            _ = ticker.tick() => {
+                                ws_stream
+                                .send(tokio_tungstenite::tungstenite::Message::text(
+                                    serde_json::to_string(&Notification {
+                                        jsonrpc: ProtocolVersion::TwoPointO,
+                                        method: "test_notification".to_string(),
+                                        params: serde_json::json!(16i32),
+                                    })
+                                    .unwrap(),
+                                ))
+                                .await
+                                .expect("failed to send test notification");
+                            },
 
-                        let rpc_req: Request = serde_json::from_str(&msg_body)
-                            .expect("failed to parse JSONRPC message");
+                            msg = ws_stream.next() => if let Some(Ok(msg)) = msg {
+                                let msg_body = msg.into_text().expect("expected text messages");
 
-                        let rpc_res = match rpc_req.method.as_str() {
-                            "add" => {
-                                let params: AddParams = serde_json::from_value(rpc_req.params)
-                                    .expect("failed to parse add method params");
+                                let rpc_req: Request = serde_json::from_str(&msg_body)
+                                    .expect("failed to parse JSONRPC message");
 
-                                Response::<_, ()>(Ok(ResultRes {
-                                    jsonrpc: ProtocolVersion::TwoPointO,
-                                    id: rpc_req.id,
-                                    result: params.a + params.b,
-                                }))
+                                let rpc_res = match rpc_req.method.as_str() {
+                                    "add" => {
+                                        let params: AddParams = serde_json::from_value(rpc_req.params)
+                                            .expect("failed to parse add method params");
+
+                                        Response::<_, ()>(Ok(ResultRes {
+                                            jsonrpc: ProtocolVersion::TwoPointO,
+                                            id: rpc_req.id,
+                                            result: params.a + params.b,
+                                        }))
+                                    }
+
+                                    _ => Response::<i32, ()>(Err(ErrorRes {
+                                        jsonrpc: ProtocolVersion::TwoPointO,
+                                        id: rpc_req.id,
+                                        code: -32601,
+                                        message: "Method not found".to_string(),
+                                        data: None,
+                                    })),
+                                };
+
+                                ws_stream
+                                    .send(tungstenite::Message::text(
+                                        serde_json::to_string(&rpc_res)
+                                            .expect("failed serializing jsonrpc response"),
+                                    ))
+                                    .await
+                                    .expect("failed sending jsonrpc response");
                             }
-
-                            _ => Response::<i32, ()>(Err(ErrorRes {
-                                jsonrpc: ProtocolVersion::TwoPointO,
-                                id: rpc_req.id,
-                                code: -32601,
-                                message: "Method not found".to_string(),
-                                data: None,
-                            })),
-                        };
-
-                        ws_stream
-                            .send(tungstenite::Message::text(
-                                serde_json::to_string(&rpc_res)
-                                    .expect("failed serializing jsonrpc response"),
-                            ))
-                            .await
-                            .expect("failed sending jsonrpc response");
+                        }
                     }
                 });
             }
@@ -292,17 +309,19 @@ mod test {
 
         println!("{:?}", not);
 
-        let res: Response<i32> = ws
-            .request(Request {
-                jsonrpc: ProtocolVersion::TwoPointO,
-                id: RequestId::String("1".to_string()),
-                method: "add".to_string(),
-                params: AddParams { a: 1, b: 2 },
-            })
-            .expect("failed serializing test server request")
-            .await
-            .expect("test request failed");
+        for _ in 1..=10 {
+            let res: Response<i32> = ws
+                .request(Request {
+                    jsonrpc: ProtocolVersion::TwoPointO,
+                    id: RequestId::String("1".to_string()),
+                    method: "add".to_string(),
+                    params: AddParams { a: 1, b: 2 },
+                })
+                .expect("failed serializing test server request")
+                .await
+                .expect("test request failed");
 
-        println!("{:?}", res);
+            println!("{:?}", res);
+        }
     }
 }
