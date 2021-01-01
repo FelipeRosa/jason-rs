@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
 use futures::{SinkExt, StreamExt};
+use serde::de::DeserializeOwned;
 use tokio::{
     net::TcpStream,
     sync::{mpsc, oneshot},
 };
 use tokio_tungstenite::{tungstenite, WebSocketStream};
 
-use crate::{helpers, Notification, Request, RequestId, Response, Transport};
+use crate::{
+    helpers,
+    transport::{NotificationStream, NotificationTransport, Transport},
+    Notification, Request, RequestId, Response,
+};
 
 /// JSON-RPC websocket client.
 #[derive(Debug, Clone)]
@@ -58,26 +63,14 @@ impl Transport for Client {
     }
 }
 
-#[cfg(feature = "notification-stream")]
-mod notification_stream_impl {
-    use super::{mpsc, Client};
+impl NotificationTransport for Client {
+    fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.client_notify_req_tx.send(tx).unwrap();
 
-    use serde::de::DeserializeOwned;
-
-    use crate::notification_stream::{NotificationStream, NotificationTransport};
-
-    impl NotificationTransport for Client {
-        fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
-            let (tx, rx) = mpsc::unbounded_channel();
-            self.client_notify_req_tx.send(tx).unwrap();
-
-            NotificationStream::new(rx)
-        }
+        NotificationStream::new(rx)
     }
 }
-
-#[cfg(feature = "notification-stream")]
-pub use notification_stream_impl::*;
 
 async fn client_task(
     ws_stream: WebSocketStream<TcpStream>,
@@ -167,7 +160,7 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::{notification_stream::NotificationTransport, ErrorRes, ProtocolVersion, ResultRes};
+    use crate::{transport::NotificationTransport, ErrorRes, ProtocolVersion, ResultRes};
 
     use super::*;
 

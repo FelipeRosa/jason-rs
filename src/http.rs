@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use hyper::{client::HttpConnector, Uri};
 
-use crate::{Request, Response, Transport};
+use crate::{transport::Transport, Request, Response};
 
 /// JSON-RPC HTTP client.
 pub struct Client {

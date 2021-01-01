@@ -6,8 +6,7 @@ edition = "2018"
 
 [features]
 http = ["tokio", "hyper"]
-ipc = ["tokio"]
-notification-stream = ["tokio"]
+ipc = ["async-stream", "tokio"]
 ws = ["async-stream", "tokio", "tokio-tungstenite"]
 
 [dependencies]

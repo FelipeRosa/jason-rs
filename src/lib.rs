@@ -1,5 +1,4 @@
-#[cfg(feature = "ws")]
-pub mod websocket;
+mod helpers;
 
 #[cfg(feature = "http")]
 pub mod http;
@@ -7,70 +6,14 @@ pub mod http;
 #[cfg(all(feature = "ipc", unix))]
 pub mod ipc;
 
-#[cfg(feature = "notification-stream")]
-mod notification_stream;
+pub mod transport;
 
-mod helpers;
+#[cfg(feature = "ws")]
+pub mod websocket;
 
-use futures::Future;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::pin::Pin;
+use serde::{Deserialize, Serialize};
 
 pub use serde_json::Number;
-
-pub trait Transport {
-    fn request_raw(
-        &self,
-        req: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, String>> + '_>>;
-
-    fn request<P, R, E>(
-        &self,
-        req: Request<P>,
-    ) -> Result<Pin<Box<dyn Future<Output = Result<Response<R, E>, String>> + '_>>, String>
-    where
-        P: Serialize,
-        R: DeserializeOwned,
-        E: DeserializeOwned,
-    {
-        let raw_req = Request {
-            jsonrpc: req.jsonrpc,
-            method: req.method,
-            id: req.id,
-            params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
-        };
-
-        Ok(Box::pin(async move {
-            let raw_res: Response = self.request_raw(raw_req).await?;
-
-            let res: Response<R, E> = match raw_res.into_result() {
-                Ok(res) => Response(Ok(ResultRes {
-                    jsonrpc: res.jsonrpc,
-                    id: res.id,
-                    result: serde_json::from_value(res.result).map_err(|err| err.to_string())?,
-                })),
-
-                Err(res) => {
-                    let data = if let Some(data) = res.data {
-                        Some(serde_json::from_value(data).map_err(|err| err.to_string())?)
-                    } else {
-                        None
-                    };
-
-                    Response(Err(ErrorRes {
-                        jsonrpc: res.jsonrpc,
-                        id: res.id,
-                        code: res.code,
-                        message: res.message,
-                        data,
-                    }))
-                }
-            };
-
-            Ok(res)
-        }))
-    }
-}
 
 /// Represents JSON-RPC protocol versions.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

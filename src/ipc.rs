@@ -2,13 +2,18 @@ use std::collections::HashMap;
 
 use futures::StreamExt;
 
+use serde::de::DeserializeOwned;
 use tokio::{
     io::AsyncWriteExt,
     net::UnixStream,
     sync::{mpsc, oneshot},
 };
 
-use crate::{helpers, Notification, Request, RequestId, Response, Transport};
+use crate::{
+    helpers,
+    transport::{NotificationStream, NotificationTransport, Transport},
+    Notification, Request, RequestId, Response,
+};
 
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>,
@@ -62,25 +67,14 @@ impl Transport for Client {
     }
 }
 
-#[cfg(feature = "notification-stream")]
-mod notification_stream_impl {
-    use serde::de::DeserializeOwned;
+impl NotificationTransport for Client {
+    fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.client_notify_req_tx.send(tx).unwrap();
 
-    use super::{mpsc, Client};
-
-    use crate::notification_stream::{NotificationStream, NotificationTransport};
-
-    impl NotificationTransport for Client {
-        fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
-            let (tx, rx) = mpsc::unbounded_channel();
-            self.client_notify_req_tx.send(tx).unwrap();
-
-            NotificationStream::new(rx)
-        }
+        NotificationStream::new(rx)
     }
 }
-#[cfg(feature = "notification-stream")]
-pub use notification_stream_impl::*;
 
 async fn client_task(
     uds_stream: UnixStream,
@@ -177,7 +171,7 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::{notification_stream::NotificationTransport, ProtocolVersion, ResultRes};
+    use crate::{transport::NotificationTransport, ProtocolVersion, ResultRes};
 
     use super::*;
 
