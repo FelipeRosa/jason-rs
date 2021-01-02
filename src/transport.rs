@@ -101,5 +101,5 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
 }
 
 pub trait NotificationTransport {
-    fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P>;
+    fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>>;
 }

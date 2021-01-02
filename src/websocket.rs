@@ -60,11 +60,11 @@ impl Transport for Client {
 }
 
 impl NotificationTransport for Client {
-    fn notification_stream<P: DeserializeOwned>(&self) -> NotificationStream<P> {
+    fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.client_notify_req_tx.send(tx).unwrap();
+        self.client_notify_req_tx.send(tx)?;
 
-        NotificationStream::new(rx)
+        Ok(NotificationStream::new(rx))
     }
 }
 
@@ -88,7 +88,19 @@ async fn client_task(
     loop {
         tokio::select! {
             c = client_req_rx.next() => if let Some((req, tx)) = c {
-                let req_str = serde_json::to_string(&req).unwrap();
+                let req_se = serde_json::to_string(&req);
+
+                let req_str = match req_se {
+                    Ok(req_str) => req_str,
+                    Err(err) => {
+                        log::error!("failed serializing JSON-RPC request");
+
+                        // Should we unwrap?
+                        let _ = tx.send(Err(anyhow::anyhow!(err)));
+
+                        continue;
+                    }
+                };
 
                 if pending_requests.insert(req.id.clone(), tx).is_some() {
                     log::warn!("replaced existing pending request with the same ID");
@@ -99,7 +111,10 @@ async fn client_task(
                     .await;
 
                 if let Err(err) = result {
-                    pending_requests.remove(&req.id).unwrap().send(Err(anyhow::anyhow!(err))).unwrap();
+                    // Should always match but let's be safe.
+                    if let Some(tx) = pending_requests.remove(&req.id) {
+                        let _ = tx.send(Err(anyhow::anyhow!(err)));
+                    }
                 }
             },
 
@@ -112,7 +127,14 @@ async fn client_task(
                     Ok(msg) => {
                         let data = msg.into_data();
 
-                        let value: serde_json::Value = serde_json::from_slice(&data).unwrap();
+                        let value: serde_json::Value = match serde_json::from_slice(&data) {
+                            Ok(value) => value,
+                            Err(err) => {
+                                log::warn!("failed deserializing JSON-RPC response {:?}", err);
+
+                                continue;
+                            }
+                        };
 
                         let is_response = if let Some(o) = value.as_object() {
                             o.contains_key("id")
@@ -121,33 +143,33 @@ async fn client_task(
                         };
 
                         if is_response {
-                            let res: Response = serde_json::from_value(value)
-                                    .expect("failed to deserialize jsonrpc response");
-
-                            if let Some(tx) = pending_requests.remove(res.id()) {
-                                tx.send(Ok(res)).unwrap();
-                            }
-                        } else {
-                            let notf: Notification = serde_json::from_value(value)
-                                .expect("failed to deserialize jsonrpc notification");
-
-                            let mut closed_tx_indexes = vec![];
-
-                            for (i, tx) in notification_txs.iter().enumerate() {
-                                if tx.is_closed() {
-                                    closed_tx_indexes.push(i);
-                                } else if let Err(_) = tx.send(notf.clone()) {
-                                    log::error!("websocket notification receive error");
+                            if let Ok(res) = serde_json::from_value::<Response>(value) {
+                                if let Some(tx) = pending_requests.remove(res.id()) {
+                                    // Should we unwrap?
+                                    let _ = tx.send(Ok(res));
                                 }
                             }
+                        } else {
+                            if let Ok(notf) = serde_json::from_value::<Notification>(value) {
+                                let mut closed_tx_indexes = vec![];
 
-                            for ix in closed_tx_indexes {
-                                notification_txs.remove(ix);
+                                for (i, tx) in notification_txs.iter().enumerate() {
+                                    if tx.is_closed() {
+                                        closed_tx_indexes.push(i);
+                                    } else {
+                                        // Should we unwrap?
+                                        let _ = tx.send(notf.clone());
+                                    }
+                                }
+
+                                for ix in closed_tx_indexes {
+                                    notification_txs.remove(ix);
+                                }
                             }
                         }
                     }
 
-                    Err(err) => log::error!("websocket stream error: {:?}", err)
+                    Err(err) => log::error!("websocket client error: {:?}", err)
                 }
             },
         }
@@ -258,6 +280,7 @@ mod test {
 
         let not: Notification<i32> = ws
             .notification_stream()
+            .expect("failed creating notification stream")
             .next()
             .await
             .expect("failed receiving test notification");
