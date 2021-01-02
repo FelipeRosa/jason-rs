@@ -9,8 +9,7 @@ use tokio::{
 };
 
 use crate::{
-    helpers,
-    transport::{NotificationStream, NotificationTransport, Transport},
+    transport::{helpers, NotificationStream, NotificationTransport, Transport},
     Notification, Request, RequestId, Response,
 };
 

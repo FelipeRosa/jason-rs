@@ -1,11 +1,10 @@
-mod helpers;
-
 #[cfg(feature = "http")]
 pub mod http;
 
 #[cfg(all(feature = "ipc", unix))]
 pub mod ipc;
 
+#[cfg(feature = "transport")]
 pub mod transport;
 
 #[cfg(feature = "ws")]

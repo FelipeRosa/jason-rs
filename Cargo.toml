@@ -5,9 +5,10 @@ authors = ["Felipe Rosa <felipe.sgrosa@gmail.com>"]
 edition = "2018"
 
 [features]
-http = ["tokio", "hyper"]
-ipc = ["async-stream", "tokio"]
-ws = ["async-stream", "tokio", "tokio-tungstenite"]
+http = ["transport", "hyper"]
+ipc = ["transport"]
+ws = ["transport", "tokio-tungstenite"]
+transport = ["tokio", "async-stream"]
 
 [dependencies]
 anyhow = "1.0.37"
@@ -24,3 +25,4 @@ tokio-tungstenite = { git = "https://github.com/FelipeRosa/tokio-tungstenite", b
 [dev-dependencies]
 hyper = { version = "0.14.2", default-features = false, features = ["tcp", "http1", "client", "server"] }
 lazy_static = "1.4.0"
+tokio = { version = "1.0.1", features = ["rt-multi-thread", "macros"] }
