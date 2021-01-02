@@ -13,6 +13,7 @@ use crate::{
     Notification, Request, RequestId, Response,
 };
 
+#[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response>>)>,
     client_notify_req_tx: mpsc::UnboundedSender<mpsc::UnboundedSender<Notification>>,
@@ -42,7 +43,7 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: crate::Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + '_>> {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 

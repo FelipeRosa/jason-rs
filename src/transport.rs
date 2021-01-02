@@ -9,13 +9,16 @@ use tokio::sync::mpsc;
 
 use crate::{ErrorRes, Notification, Request, Response, ResultRes};
 
-pub trait Transport {
-    fn request_raw(&self, req: Request) -> Pin<Box<dyn Future<Output = Result<Response>> + '_>>;
+pub trait Transport: Send + Sync {
+    fn request_raw(
+        &self,
+        req: Request,
+    ) -> Pin<Box<dyn Future<Output = Result<Response>> + Send + '_>>;
 
     fn request<P, R, E>(
         &self,
         req: Request<P>,
-    ) -> Result<Pin<Box<dyn Future<Output = Result<Response<R, E>>> + '_>>>
+    ) -> Result<Pin<Box<dyn Future<Output = Result<Response<R, E>>> + Send + '_>>>
     where
         P: Serialize,
         R: DeserializeOwned,

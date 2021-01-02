@@ -5,6 +5,7 @@ use std::str::FromStr;
 use crate::{transport::Transport, Request, Response};
 
 /// JSON-RPC HTTP client.
+#[derive(Debug, Clone)]
 pub struct Client {
     uri: Uri,
     http_client: hyper::Client<HttpConnector>,
@@ -23,7 +24,7 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + '_>> {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
         Box::pin(async move {
             let req_uri = self.uri.clone();
             let req_body = serde_json::to_string(&req)?;

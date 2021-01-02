@@ -11,7 +11,6 @@ pub mod transport;
 pub mod websocket;
 
 use serde::{Deserialize, Serialize};
-pub use serde_json::Number;
 
 /// Represents JSON-RPC protocol versions.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -49,7 +48,7 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum RequestId {
     String(String),
-    Number(Number),
+    Number(u64),
 }
 
 impl std::hash::Hash for RequestId {
@@ -81,7 +80,12 @@ impl<'a> Deserialize<'a> for RequestId {
         let val: serde_json::Value = Deserialize::deserialize(deserializer)?;
 
         match val {
-            serde_json::Value::Number(n) => Ok(RequestId::Number(n)),
+            serde_json::Value::Number(n) => {
+                Ok(RequestId::Number(n.as_u64().ok_or_else(|| {
+                    serde::de::Error::custom("request id must be u64")
+                })?))
+            }
+
             serde_json::Value::String(s) => Ok(RequestId::String(s)),
 
             _ => Err(serde::de::Error::custom(

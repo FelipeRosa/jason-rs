@@ -40,7 +40,7 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + '_>> {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 
