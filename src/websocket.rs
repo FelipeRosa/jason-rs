@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-
+use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 use tokio::{
     net::TcpStream,
     sync::{mpsc, oneshot},
@@ -17,15 +17,13 @@ use crate::{
 /// JSON-RPC websocket client.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, String>>)>,
+    client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response>>)>,
     client_notify_req_tx: mpsc::UnboundedSender<mpsc::UnboundedSender<Notification>>,
 }
 
 impl Client {
-    pub async fn new(url: &str) -> Result<Self, String> {
-        let (ws_stream, _) = tokio_tungstenite::connect_async(url)
-            .await
-            .map_err(|err| err.to_string())?;
+    pub async fn new(url: &str) -> Result<Self> {
+        let (ws_stream, _) = tokio_tungstenite::connect_async(url).await?;
 
         let (client_req_tx, client_req_rx) = mpsc::unbounded_channel();
         let (client_notify_req_tx, client_notify_req_rx) = mpsc::unbounded_channel();
@@ -43,7 +41,7 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response, String>> + '_>> {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + '_>> {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 
@@ -51,14 +49,12 @@ impl Transport for Client {
                 jsonrpc: req.jsonrpc,
                 id: req.id,
                 method: req.method,
-                params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
+                params: serde_json::to_value(req.params)?,
             };
 
-            self.client_req_tx
-                .send((req, client_tx))
-                .map_err(|err| err.to_string())?;
+            self.client_req_tx.send((req, client_tx))?;
 
-            client_rx.await.map_err(|err| err.to_string())?
+            client_rx.await?
         })
     }
 }
@@ -74,12 +70,12 @@ impl NotificationTransport for Client {
 
 async fn client_task(
     ws_stream: WebSocketStream<TcpStream>,
-    client_req_rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response, String>>)>,
+    client_req_rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response>>)>,
     client_notify_req_rx: mpsc::UnboundedReceiver<mpsc::UnboundedSender<Notification>>,
 ) {
     log::debug!("spawned websocket client task");
 
-    let mut pending_requests: HashMap<RequestId, oneshot::Sender<Result<Response, String>>> =
+    let mut pending_requests: HashMap<RequestId, oneshot::Sender<Result<Response>>> =
         HashMap::new();
 
     let mut notification_txs: Vec<mpsc::UnboundedSender<Notification>> = vec![];
@@ -103,7 +99,7 @@ async fn client_task(
                     .await;
 
                 if let Err(err) = result {
-                    pending_requests.remove(&req.id).unwrap().send(Err(err.to_string())).unwrap();
+                    pending_requests.remove(&req.id).unwrap().send(Err(anyhow::anyhow!(err))).unwrap();
                 }
             },
 

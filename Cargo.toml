@@ -10,6 +10,7 @@ ipc = ["async-stream", "tokio"]
 ws = ["async-stream", "tokio", "tokio-tungstenite"]
 
 [dependencies]
+anyhow = "1.0.37"
 futures = { version = "0.3.8", default-features = false, features = ["std"] }
 log = "0.4.11"
 serde = { version = "1.0.118", features = ["derive"] }

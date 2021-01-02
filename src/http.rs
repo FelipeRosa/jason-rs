@@ -1,6 +1,6 @@
-use std::str::FromStr;
-
+use anyhow::Result;
 use hyper::{client::HttpConnector, Uri};
+use std::str::FromStr;
 
 use crate::{transport::Transport, Request, Response};
 
@@ -11,9 +11,9 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(addr: &str) -> Result<Self, String> {
+    pub fn new(addr: &str) -> Result<Self> {
         Ok(Self {
-            uri: Uri::from_str(addr).map_err(|err| err.to_string())?,
+            uri: Uri::from_str(addr)?,
             http_client: hyper::Client::new(),
         })
     }
@@ -23,32 +23,23 @@ impl Transport for Client {
     fn request_raw(
         &self,
         req: Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response, String>> + '_>> {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + '_>> {
         Box::pin(async move {
             let req_uri = self.uri.clone();
-            let req_body = serde_json::to_string(&req).map_err(|err| err.to_string())?;
+            let req_body = serde_json::to_string(&req)?;
 
             let http_req = hyper::Request::builder()
                 .header(hyper::header::USER_AGENT, "jason.rs/0.1.0")
                 .header(hyper::header::CONTENT_TYPE, "application/json")
                 .method(hyper::Method::POST)
                 .uri(req_uri)
-                .body(hyper::Body::from(req_body))
-                .map_err(|err| err.to_string())?;
+                .body(hyper::Body::from(req_body))?;
 
-            let res_body = self
-                .http_client
-                .request(http_req)
-                .await
-                .map_err(|err| err.to_string())?
-                .into_body();
+            let res_body = self.http_client.request(http_req).await?.into_body();
 
-            let res_data = hyper::body::to_bytes(res_body)
-                .await
-                .map_err(|err| err.to_string())?;
+            let res_data = hyper::body::to_bytes(res_body).await?;
 
-            let parsed_res: Response =
-                serde_json::from_slice(&res_data).map_err(|err| err.to_string())?;
+            let parsed_res: Response = serde_json::from_slice(&res_data)?;
 
             Ok(parsed_res)
         })

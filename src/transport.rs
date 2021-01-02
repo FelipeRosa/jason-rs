@@ -1,5 +1,6 @@
 use std::{pin::Pin, task::Poll};
 
+use anyhow::Result;
 use futures::{Future, Stream};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::mpsc;
@@ -7,15 +8,12 @@ use tokio::sync::mpsc;
 use crate::{ErrorRes, Notification, Request, Response, ResultRes};
 
 pub trait Transport {
-    fn request_raw(
-        &self,
-        req: Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, String>> + '_>>;
+    fn request_raw(&self, req: Request) -> Pin<Box<dyn Future<Output = Result<Response>> + '_>>;
 
     fn request<P, R, E>(
         &self,
         req: Request<P>,
-    ) -> Result<Pin<Box<dyn Future<Output = Result<Response<R, E>, String>> + '_>>, String>
+    ) -> Result<Pin<Box<dyn Future<Output = Result<Response<R, E>>> + '_>>>
     where
         P: Serialize,
         R: DeserializeOwned,
@@ -25,7 +23,7 @@ pub trait Transport {
             jsonrpc: req.jsonrpc,
             method: req.method,
             id: req.id,
-            params: serde_json::to_value(req.params).map_err(|err| err.to_string())?,
+            params: serde_json::to_value(req.params)?,
         };
 
         Ok(Box::pin(async move {
@@ -35,12 +33,12 @@ pub trait Transport {
                 Ok(res) => Response(Ok(ResultRes {
                     jsonrpc: res.jsonrpc,
                     id: res.id,
-                    result: serde_json::from_value(res.result).map_err(|err| err.to_string())?,
+                    result: serde_json::from_value(res.result)?,
                 })),
 
                 Err(res) => {
                     let data = if let Some(data) = res.data {
-                        Some(serde_json::from_value(data).map_err(|err| err.to_string())?)
+                        Some(serde_json::from_value(data)?)
                     } else {
                         None
                     };

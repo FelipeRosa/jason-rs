@@ -12,7 +12,6 @@ pub mod transport;
 pub mod websocket;
 
 use serde::{Deserialize, Serialize};
-
 pub use serde_json::Number;
 
 /// Represents JSON-RPC protocol versions.
