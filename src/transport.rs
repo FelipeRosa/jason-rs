@@ -9,12 +9,17 @@ use tokio::sync::mpsc;
 
 use crate::{ErrorRes, Notification, Request, Response, ResultRes};
 
+/// Transport sends JSON-RPC requests.
 pub trait Transport: Send + Sync {
+    /// Sends a request serializing and deserializing request params
+    /// and response result and error data as serde_json::Value.
     fn request_raw(
         &self,
         req: Request,
     ) -> Pin<Box<dyn Future<Output = Result<Response>> + Send + '_>>;
 
+    /// Sends a request serializing and deserializing request params
+    /// and response result and error data to the given generic types.
     fn request<P, R, E>(
         &self,
         req: Request<P>,
@@ -105,6 +110,7 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
     }
 }
 
+/// Notification transport is able to receive JSON-RPC notifications.
 pub trait NotificationTransport {
     fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>>;
 }

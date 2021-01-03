@@ -12,6 +12,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a new HTTP client connected to the server at the given URL.
     pub fn new(addr: &str) -> Result<Self> {
         Ok(Self {
             uri: Uri::from_str(addr)?,

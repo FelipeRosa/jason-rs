@@ -21,6 +21,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a new websocket client connected to the server at the given URL.
     pub async fn new(url: &str) -> Result<Self> {
         let (ws_stream, _) = tokio_tungstenite::connect_async(url).await?;
 

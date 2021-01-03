@@ -13,6 +13,7 @@ use crate::{
     Notification, Request, RequestId, Response,
 };
 
+/// JSON-RPC IPC client.
 #[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response>>)>,
@@ -20,12 +21,14 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a new IPC client connected to the socket at the given path.
     pub async fn new<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let uds_stream = UnixStream::connect(path).await?;
 
         Ok(Self::from_stream(uds_stream))
     }
 
+    /// Creates a new IPC client using the given UnixStream.
     pub fn from_stream(st: UnixStream) -> Self {
         let (client_req_tx, client_req_rx) = mpsc::unbounded_channel();
         let (client_notify_req_tx, client_notify_req_rx) = mpsc::unbounded_channel();
