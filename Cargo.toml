@@ -3,6 +3,12 @@ name = "jason"
 version = "0.1.0"
 authors = ["Felipe Rosa <felipe.sgrosa@gmail.com>"]
 edition = "2018"
+description = "JSON-RPC 2.0 client library"
+documentation = "https://docs.rs/jason"
+readme = "README.md"
+repository = "https://github.com/FelipeRosa/jason-rs"
+license = "MIT"
+keywords = ["json-rpc", "tokio"]
 
 [features]
 http = ["transport", "hyper"]
