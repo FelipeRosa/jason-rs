@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::{transport::Transport, Request, Response};
 
-/// JSON-RPC HTTP client.
+/// HTTP client.
 #[derive(Debug, Clone)]
 pub struct Client {
     uri: Uri,

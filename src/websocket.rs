@@ -13,7 +13,7 @@ use crate::{
     Notification, Request, RequestId, Response,
 };
 
-/// JSON-RPC websocket client.
+/// Websockets client.
 #[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response>>)>,
@@ -21,7 +21,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Creates a new websocket client connected to the server at the given URL.
+    /// Creates a new websockets client connected to the server at the given URL.
     pub async fn new(url: &str) -> Result<Self> {
         let (ws_stream, _) = tokio_tungstenite::connect_async(url).await?;
 

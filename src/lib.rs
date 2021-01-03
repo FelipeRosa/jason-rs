@@ -12,7 +12,7 @@ pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 
-/// Represents JSON-RPC protocol versions.
+/// Represents protocol versions.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ProtocolVersion {
     TwoPointO,
@@ -44,7 +44,7 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
     }
 }
 
-/// Represents a JSON-RPC request ID.
+/// Represents a request ID.
 #[derive(Debug, Clone)]
 pub enum RequestId {
     String(String),
@@ -107,7 +107,7 @@ impl<'a> Deserialize<'a> for RequestId {
     }
 }
 
-/// Represents a JSON-RPC request.
+/// Represents a request.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Request<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
@@ -127,7 +127,7 @@ impl<P> Request<P> {
     }
 }
 
-/// Represents a JSON-RPC notification.
+/// Represents a notification.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Notification<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
@@ -145,7 +145,7 @@ impl<P> Notification<P> {
     }
 }
 
-/// Represents a JSON-RPC successful response.
+/// Represents a successful response.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize)]
 pub struct ResultRes<R> {
     pub jsonrpc: ProtocolVersion,
@@ -163,7 +163,7 @@ impl<R> ResultRes<R> {
     }
 }
 
-/// Represents a JSON-RPC failed response.
+/// Represents a failed response.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize)]
 pub struct ErrorRes<E> {
     pub jsonrpc: ProtocolVersion,
@@ -185,7 +185,7 @@ impl<E> ErrorRes<E> {
     }
 }
 
-/// Represents a JSON-RPC response which can be successful or failed.
+/// Represents a response which can be successful or failed.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Response<R = serde_json::Value, E = serde_json::Value>(
     std::result::Result<ResultRes<R>, ErrorRes<E>>,

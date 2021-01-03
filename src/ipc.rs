@@ -13,7 +13,7 @@ use crate::{
     Notification, Request, RequestId, Response,
 };
 
-/// JSON-RPC IPC client.
+/// IPC client.
 #[derive(Debug, Clone)]
 pub struct Client {
     client_req_tx: mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response>>)>,

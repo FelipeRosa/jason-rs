@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::{ErrorRes, Notification, Request, Response, ResultRes};
 
-/// Transport sends JSON-RPC requests.
+/// Transport is able to send requests.
 pub trait Transport: Send + Sync {
     /// Sends a request serializing and deserializing request params
     /// and response result and error data as serde_json::Value.
@@ -68,7 +68,7 @@ pub trait Transport: Send + Sync {
     }
 }
 
-/// Stream of JSON-RPC notifications.
+/// Stream of notifications.
 pub struct NotificationStream<P> {
     rx: mpsc::UnboundedReceiver<Notification>,
     _p: std::marker::PhantomData<P>,
@@ -110,7 +110,7 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
     }
 }
 
-/// Notification transport is able to receive JSON-RPC notifications.
+/// Notification transport is able to receive notifications.
 pub trait NotificationTransport {
     fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>>;
 }
