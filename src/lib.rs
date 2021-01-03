@@ -45,10 +45,22 @@ impl<'a> Deserialize<'a> for ProtocolVersion {
 }
 
 /// Represents a JSON-RPC request ID.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum RequestId {
     String(String),
     Number(u64),
+}
+
+impl Eq for RequestId {}
+
+impl PartialEq for RequestId {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RequestId::String(s1), RequestId::String(s2)) => s1 == s2,
+            (RequestId::Number(n1), RequestId::Number(n2)) => n1 == n2,
+            _ => false,
+        }
+    }
 }
 
 impl std::hash::Hash for RequestId {
