@@ -6,7 +6,7 @@ Jason is a JSON-RPC 2.0 client library written in Rust.
 
 - Request, response and notification serializing and deserializing
 - Supports multiple transports:
-  - HTTP
+  - HTTP and HTTPS
   - Websockets
   - IPC (_Unix only_)
 
