@@ -119,33 +119,12 @@ pub struct Request<P = serde_json::Value> {
     pub params: P,
 }
 
-impl<P> Request<P> {
-    pub fn map<Q, F: FnOnce(P) -> Q>(self, f: F) -> Request<Q> {
-        Request {
-            jsonrpc: self.jsonrpc,
-            id: self.id,
-            method: self.method,
-            params: f(self.params),
-        }
-    }
-}
-
 /// Represents a notification.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Notification<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
     pub method: String,
     pub params: P,
-}
-
-impl<P> Notification<P> {
-    pub fn map<Q, F: FnOnce(P) -> Q>(self, f: F) -> Notification<Q> {
-        Notification {
-            jsonrpc: self.jsonrpc,
-            method: self.method,
-            params: f(self.params),
-        }
-    }
 }
 
 /// Represents a successful response.
@@ -156,16 +135,6 @@ pub struct ResultRes<R> {
     pub result: R,
 }
 
-impl<R> ResultRes<R> {
-    pub fn map<T, F: FnOnce(R) -> T>(self, f: F) -> ResultRes<T> {
-        ResultRes {
-            jsonrpc: self.jsonrpc,
-            id: self.id,
-            result: f(self.result),
-        }
-    }
-}
-
 /// Represents a failed response.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize)]
 pub struct ErrorRes<E> {
@@ -174,18 +143,6 @@ pub struct ErrorRes<E> {
     pub code: i64,
     pub message: String,
     pub data: Option<E>,
-}
-
-impl<E> ErrorRes<E> {
-    pub fn map<T, F: FnOnce(Option<E>) -> Option<T>>(self, f: F) -> ErrorRes<T> {
-        ErrorRes {
-            jsonrpc: self.jsonrpc,
-            id: self.id,
-            code: self.code,
-            message: self.message,
-            data: f(self.data),
-        }
-    }
 }
 
 /// Represents a response which can be successful or failed.
@@ -202,24 +159,11 @@ impl<R, E> Response<R, E> {
         }
     }
 
-    pub fn map<T, F: FnOnce(R) -> T>(self, f: F) -> Response<T, E> {
-        match self {
-            Response(Ok(res)) => Response(Ok(res.map(f))),
-            Response(Err(res)) => Response(Err(res)),
-        }
-    }
-
     pub fn as_result(&self) -> &std::result::Result<ResultRes<R>, ErrorRes<E>> {
         &self.0
     }
 
     pub fn into_result(self) -> std::result::Result<ResultRes<R>, ErrorRes<E>> {
-        self.0
-    }
-}
-
-impl<R, E> Into<std::result::Result<ResultRes<R>, ErrorRes<E>>> for Response<R, E> {
-    fn into(self) -> std::result::Result<ResultRes<R>, ErrorRes<E>> {
         self.0
     }
 }
