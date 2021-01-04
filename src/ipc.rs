@@ -50,13 +50,6 @@ impl Transport for Client {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 
-            let req = Request {
-                jsonrpc: req.jsonrpc,
-                id: req.id,
-                method: req.method,
-                params: serde_json::to_value(req.params)?,
-            };
-
             self.client_req_tx.send((req, client_tx))?;
 
             client_rx.await?
@@ -183,7 +176,7 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::{transport::NotificationTransport, ProtocolVersion, ResultRes};
+    use crate::{transport::NotificationTransport, ProtocolVersion, RequestParams, ResultRes};
 
     use super::*;
 
@@ -202,7 +195,7 @@ mod test {
                         writer.write_all(serde_json::to_string(&Notification {
                             jsonrpc: ProtocolVersion::TwoPointO,
                             method: "test_notification".to_string(),
-                            params: serde_json::json!(15i32),
+                            params: Some(vec![serde_json::json!(15i32)].into()),
                         })
                         .unwrap()
                         .as_bytes())
@@ -253,11 +246,11 @@ mod test {
 
         for _ in 1..=10 {
             let res: Response<i32> = c
-                .request(Request {
+                .request(Request::<()> {
                     jsonrpc: ProtocolVersion::TwoPointO,
                     id: RequestId::String("1".to_string()),
                     method: "some_method".to_string(),
-                    params: (),
+                    params: None,
                 })
                 .expect("failed serializing test server request")
                 .await

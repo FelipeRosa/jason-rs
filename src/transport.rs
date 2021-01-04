@@ -29,11 +29,16 @@ pub trait Transport: Send + Sync {
         R: DeserializeOwned,
         E: DeserializeOwned,
     {
+        let raw_params = match req.params {
+            Some(params) => Some(params.try_map(serde_json::to_value)?),
+            None => None,
+        };
+
         let raw_req = Request {
             jsonrpc: req.jsonrpc,
             method: req.method,
             id: req.id,
-            params: serde_json::to_value(req.params)?,
+            params: raw_params,
         };
 
         Ok(Box::pin(async move {
@@ -93,15 +98,23 @@ impl<P: DeserializeOwned> Stream for NotificationStream<P> {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         match self.rx.poll_recv(cx) {
-            Poll::Ready(Some(n)) => match serde_json::from_value(n.params) {
-                Ok(params) => Poll::Ready(Some(Notification {
-                    jsonrpc: n.jsonrpc,
-                    method: n.method,
-                    params,
-                })),
+            Poll::Ready(Some(n)) => {
+                let params = match n.params {
+                    Some(params) => params.try_map(serde_json::from_value).map(Option::Some),
 
-                Err(_) => Poll::Pending,
-            },
+                    None => std::result::Result::Ok(None),
+                };
+
+                match params {
+                    Ok(params) => Poll::Ready(Some(Notification {
+                        jsonrpc: n.jsonrpc,
+                        method: n.method,
+                        params,
+                    })),
+
+                    Err(_) => Poll::Pending,
+                }
+            }
 
             Poll::Ready(None) => Poll::Ready(None),
 
