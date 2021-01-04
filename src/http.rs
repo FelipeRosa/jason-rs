@@ -1,5 +1,8 @@
 use anyhow::Result;
-use hyper::{client::HttpConnector, Uri};
+use hyper::{
+    client::{connect::Connect, HttpConnector},
+    Uri,
+};
 use std::str::FromStr;
 
 use crate::{transport::Transport, Request, Response};
@@ -7,21 +10,43 @@ use crate::{transport::Transport, Request, Response};
 /// HTTP client.
 #[derive(Debug, Clone)]
 pub struct Client {
-    uri: Uri,
-    http_client: hyper::Client<HttpConnector>,
+    raw: RawClient<HttpConnector>,
 }
 
 impl Client {
     /// Creates a new HTTP client connected to the server at the given URL.
     pub fn new(addr: &str) -> Result<Self> {
-        Ok(Self {
-            uri: Uri::from_str(addr)?,
-            http_client: hyper::Client::new(),
+        Ok(Client {
+            raw: RawClient::new(addr, HttpConnector::new())?,
         })
     }
 }
 
 impl Transport for Client {
+    fn request_raw(
+        &self,
+        req: Request,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
+        self.raw.request_raw(req)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RawClient<C> {
+    pub(crate) uri: Uri,
+    pub(crate) http_client: hyper::Client<C>,
+}
+
+impl<C: Connect + Clone> RawClient<C> {
+    pub(crate) fn new(addr: &str, connector: C) -> Result<Self> {
+        Ok(Self {
+            uri: Uri::from_str(addr)?,
+            http_client: hyper::Client::builder().build(connector),
+        })
+    }
+}
+
+impl<C: Connect + Clone + Send + Sync + 'static> Transport for RawClient<C> {
     fn request_raw(
         &self,
         req: Request,

@@ -1,6 +1,9 @@
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(feature = "http-tls")]
+pub mod https;
+
 #[cfg(all(feature = "ipc", unix))]
 pub mod ipc;
 

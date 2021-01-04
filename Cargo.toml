@@ -12,6 +12,7 @@ keywords = ["json-rpc", "tokio"]
 
 [features]
 http = ["transport", "hyper"]
+http-tls = ["http", "hyper-tls"]
 ipc = ["transport"]
 ws = ["transport", "tokio-tungstenite"]
 transport = ["tokio", "async-stream"]
@@ -25,6 +26,7 @@ serde_json = "1.0.60"
 
 async-stream = { version = "0.3.0", optional = true }
 hyper = { version = "0.14.2", default-features = false, features = ["tcp", "http1", "client"], optional = true }
+hyper-tls = { version = "0.5.0", optional = true }
 tokio = { version = "1.0.1", default-features = false, features = ["rt", "sync", "net", "macros", "io-util"], optional = true }
 tokio-tungstenite = { git = "https://github.com/FelipeRosa/tokio-tungstenite", branch = "update-dependencies", default-features = false, features = ["connect"], optional = true }
 
