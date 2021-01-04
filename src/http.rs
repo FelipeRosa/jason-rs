@@ -111,11 +111,11 @@ mod test {
         let c = Client::new("http://127.0.0.1:3000").expect("failed to create client");
 
         let res: Response<i32> = c
-            .request(Request {
+            .request(Request::<()> {
                 jsonrpc: ProtocolVersion::TwoPointO,
                 id: RequestId::String("1".to_string()),
                 method: "some_method".to_string(),
-                params: (),
+                params: None,
             })
             .expect("failed serializing request")
             .await

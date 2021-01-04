@@ -14,6 +14,7 @@ pub mod transport;
 pub mod websocket;
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Represents protocol versions.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -110,13 +111,118 @@ impl<'a> Deserialize<'a> for RequestId {
     }
 }
 
+/// Represents request parameters.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum RequestParams<P> {
+    /// Request parameters by position.
+    ByPosition(Vec<P>),
+
+    /// Request parameters by name.
+    ByName(BTreeMap<String, P>),
+}
+
+impl<P> RequestParams<P> {
+    /// Maps the parameter values using the given function. Returns Err if any call to f returns Err.
+    pub fn try_map<Q, E, F>(self, mut f: F) -> std::result::Result<RequestParams<Q>, E>
+    where
+        F: FnMut(P) -> std::result::Result<Q, E>,
+    {
+        match self {
+            RequestParams::ByPosition(vs) => vs
+                .into_iter()
+                .map(f)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map(RequestParams::ByPosition),
+
+            RequestParams::ByName(m) => m
+                .into_iter()
+                .map(|(k, v)| f(v).map(|v| (k, v)))
+                .collect::<std::result::Result<BTreeMap<_, _>, _>>()
+                .map(RequestParams::ByName),
+        }
+    }
+}
+
+impl<P: Serialize> Serialize for RequestParams<P> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequestParams::ByPosition(vs) => vs.serialize(serializer),
+            RequestParams::ByName(m) => m.serialize(serializer),
+        }
+    }
+}
+
+impl<'a, P: Deserialize<'a>> Deserialize<'a> for RequestParams<P> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        deserializer.deserialize_any(RequestParamsVisitor::new())
+    }
+}
+
+impl<P> From<Vec<(String, P)>> for RequestParams<P> {
+    fn from(vs: Vec<(String, P)>) -> Self {
+        RequestParams::ByName(vs.into_iter().collect())
+    }
+}
+
+impl<P> From<Vec<P>> for RequestParams<P> {
+    fn from(vs: Vec<P>) -> Self {
+        RequestParams::ByPosition(vs)
+    }
+}
+
+struct RequestParamsVisitor<P> {
+    _p: std::marker::PhantomData<P>,
+}
+
+impl<P> RequestParamsVisitor<P> {
+    fn new() -> Self {
+        Self {
+            _p: std::marker::PhantomData::default(),
+        }
+    }
+}
+
+impl<'a, P: Deserialize<'a>> serde::de::Visitor<'a> for RequestParamsVisitor<P> {
+    type Value = RequestParams<P>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("array or object")
+    }
+
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'a>,
+    {
+        let vs: Vec<P> =
+            Deserialize::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
+
+        Ok(RequestParams::ByPosition(vs))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'a>,
+    {
+        let m: BTreeMap<String, P> =
+            Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+
+        Ok(RequestParams::ByName(m))
+    }
+}
+
 /// Represents a request.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Request<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
     pub method: String,
-    pub params: P,
+    pub params: Option<RequestParams<P>>,
 }
 
 /// Represents a notification.
@@ -124,7 +230,7 @@ pub struct Request<P = serde_json::Value> {
 pub struct Notification<P = serde_json::Value> {
     pub jsonrpc: ProtocolVersion,
     pub method: String,
-    pub params: P,
+    pub params: Option<RequestParams<P>>,
 }
 
 /// Represents a successful response.
@@ -244,10 +350,10 @@ mod tests {
 
     #[test]
     fn serialize_requests() {
-        let req = Request {
+        let req = Request::<i32> {
             jsonrpc: ProtocolVersion::TwoPointO,
             method: "method1".to_string(),
-            params: &json!([]),
+            params: Some(vec![1, 2].into()),
             id: RequestId::String("1".to_string()),
         };
         let val = serde_json::to_value(req);
@@ -260,7 +366,7 @@ mod tests {
             json!({
                 "jsonrpc": "2.0",
                 "method": "method1",
-                "params": [],
+                "params": [1, 2],
                 "id": "1",
             })
         );

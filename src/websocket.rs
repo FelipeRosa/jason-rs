@@ -45,13 +45,6 @@ impl Transport for Client {
         Box::pin(async move {
             let (client_tx, client_rx) = oneshot::channel();
 
-            let req = Request {
-                jsonrpc: req.jsonrpc,
-                id: req.id,
-                method: req.method,
-                params: serde_json::to_value(req.params)?,
-            };
-
             self.client_req_tx.send((req, client_tx))?;
 
             client_rx.await?
@@ -178,18 +171,13 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::{transport::NotificationTransport, ErrorRes, ProtocolVersion, ResultRes};
+    use crate::{
+        transport::NotificationTransport, ErrorRes, ProtocolVersion, RequestParams, ResultRes,
+    };
 
     use super::*;
 
-    use serde::{Deserialize, Serialize};
     use tokio_tungstenite::tungstenite;
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct AddParams {
-        a: i32,
-        b: i32,
-    }
 
     lazy_static::lazy_static! {
         static ref TEST_MUTEX: tokio::sync::Mutex<bool> = tokio::sync::Mutex::new(false);
@@ -217,7 +205,7 @@ mod test {
                                     serde_json::to_string(&Notification {
                                         jsonrpc: ProtocolVersion::TwoPointO,
                                         method: "test_notification".to_string(),
-                                        params: serde_json::json!(16i32),
+                                        params: Some(vec![serde_json::json!(16i32)].into()),
                                     })
                                     .unwrap(),
                                 ))
@@ -228,19 +216,31 @@ mod test {
                             msg = ws_stream.next() => if let Some(Ok(msg)) = msg {
                                 let msg_body = msg.into_text().expect("expected text messages");
 
-                                let rpc_req: Request = serde_json::from_str(&msg_body)
+                                let rpc_req: Request::<i32> = serde_json::from_str(&msg_body)
                                     .expect("failed to parse JSONRPC message");
+
 
                                 let rpc_res = match rpc_req.method.as_str() {
                                     "add" => {
-                                        let params: AddParams = serde_json::from_value(rpc_req.params)
-                                            .expect("failed to parse add method params");
+                                        match rpc_req.params {
+                                            Some(RequestParams::ByName(params)) => {
+                                                Response::<i32, ()>(Ok(ResultRes {
+                                                    jsonrpc: ProtocolVersion::TwoPointO,
+                                                    id: rpc_req.id,
+                                                    result: params.get("a").expect("missing 'a'") + params.get("b").expect("missing 'b'"),
+                                                }))
+                                            },
 
-                                        Response::<_, ()>(Ok(ResultRes {
-                                            jsonrpc: ProtocolVersion::TwoPointO,
-                                            id: rpc_req.id,
-                                            result: params.a + params.b,
-                                        }))
+                                            _ => {
+                                                Response::<i32, ()>(Err(ErrorRes {
+                                                    jsonrpc: ProtocolVersion::TwoPointO,
+                                                    id: rpc_req.id,
+                                                    code: -32602,
+                                                    message: "Invalid params".to_string(),
+                                                    data: None,
+                                                }))
+                                            }
+                                        }
                                     }
 
                                     _ => Response::<i32, ()>(Err(ErrorRes {
@@ -289,11 +289,11 @@ mod test {
 
         for _ in 1..=10 {
             let res: Response<i32> = ws
-                .request(Request {
+                .request(Request::<i32> {
                     jsonrpc: ProtocolVersion::TwoPointO,
                     id: RequestId::String("1".to_string()),
                     method: "add".to_string(),
-                    params: AddParams { a: 1, b: 2 },
+                    params: Some(vec![("a".to_string(), 1), ("b".to_string(), 2)].into()),
                 })
                 .expect("failed serializing test server request")
                 .await

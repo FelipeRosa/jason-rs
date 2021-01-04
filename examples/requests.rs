@@ -9,7 +9,7 @@ async fn main() {
             jsonrpc: ProtocolVersion::TwoPointO,
             id: RequestId::Number(1),
             method: "some_method".to_owned(),
-            params: vec!["param"],
+            params: Some(vec!["param"].into()),
         })
         .expect("failed serializing request")
         .await
