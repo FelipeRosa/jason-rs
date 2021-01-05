@@ -23,11 +23,11 @@ impl Client {
 }
 
 impl Transport for Client {
-    fn request_raw(
+    fn request(
         &self,
         req: Request,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
-        self.raw.request_raw(req)
+        self.raw.request(req)
     }
 }
 
@@ -47,7 +47,7 @@ impl<C: Connect + Clone> RawClient<C> {
 }
 
 impl<C: Connect + Clone + Send + Sync + 'static> Transport for RawClient<C> {
-    fn request_raw(
+    fn request(
         &self,
         req: Request,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
@@ -75,6 +75,8 @@ impl<C: Connect + Clone + Send + Sync + 'static> Transport for RawClient<C> {
 
 #[cfg(test)]
 mod test {
+    use serde_json::json;
+
     use crate::{ProtocolVersion, Request, RequestId};
 
     use super::*;
@@ -85,7 +87,7 @@ mod test {
         _req: hyper::Request<hyper::Body>,
     ) -> Result<hyper::Response<hyper::Body>, Infallible> {
         Ok::<_, Infallible>(hyper::Response::new(hyper::Body::from(
-            serde_json::json!({
+            json!({
                 "jsonrpc": "2.0",
                 "id": "1",
                 "result": 7,
@@ -110,14 +112,13 @@ mod test {
 
         let c = Client::new("http://127.0.0.1:3000").expect("failed to create client");
 
-        let res: Response<i32> = c
-            .request(Request::<()> {
+        let res: Response = c
+            .request(Request {
                 jsonrpc: ProtocolVersion::TwoPointO,
                 id: RequestId::String("1".to_string()),
                 method: "some_method".to_string(),
                 params: None,
             })
-            .expect("failed serializing request")
             .await
             .expect("test request failed");
 

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use futures::StreamExt;
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::{
     io::AsyncWriteExt,
@@ -43,7 +42,7 @@ impl Client {
 }
 
 impl Transport for Client {
-    fn request_raw(
+    fn request(
         &self,
         req: crate::Request,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
@@ -58,7 +57,7 @@ impl Transport for Client {
 }
 
 impl NotificationTransport for Client {
-    fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>> {
+    fn notification_stream(&self) -> Result<NotificationStream> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.client_notify_req_tx.send(tx)?;
 
@@ -176,10 +175,11 @@ async fn client_task(
 
 #[cfg(test)]
 mod test {
-    use crate::{transport::NotificationTransport, ProtocolVersion, RequestParams, ResultRes};
+    use crate::{transport::NotificationTransport, ProtocolVersion, ResultRes};
 
     use super::*;
 
+    use serde_json::json;
     use tokio::net::UnixStream;
 
     fn start_jsonrpc_test_server(st: UnixStream) {
@@ -195,7 +195,7 @@ mod test {
                         writer.write_all(serde_json::to_string(&Notification {
                             jsonrpc: ProtocolVersion::TwoPointO,
                             method: "test_notification".to_string(),
-                            params: Some(vec![serde_json::json!(15i32)].into()),
+                            params: Some(vec![json!(15)].into()),
                         })
                         .unwrap()
                         .as_bytes())
@@ -204,13 +204,13 @@ mod test {
                     },
 
                     bs = reader.next() => if let Some(Ok(bytes)) = bs {
-                        let rpc_req: Request<()> =
+                        let rpc_req: Request =
                             serde_json::from_slice(&bytes).expect("failed deserializing test request");
 
-                        let rpc_res: Response<i32> = Response(Ok(ResultRes {
+                        let rpc_res: Response = Response(Ok(ResultRes {
                             jsonrpc: ProtocolVersion::TwoPointO,
                             id: rpc_req.id,
-                            result: 16i32,
+                            result: json!(16),
                         }));
 
                         writer
@@ -235,7 +235,7 @@ mod test {
 
         let c = Client::from_stream(st1);
 
-        let not: Notification<i32> = c
+        let not: Notification = c
             .notification_stream()
             .expect("failed creating notification stream")
             .next()
@@ -245,14 +245,13 @@ mod test {
         println!("{:?}", not);
 
         for _ in 1..=10 {
-            let res: Response<i32> = c
-                .request(Request::<()> {
+            let res: Response = c
+                .request(Request {
                     jsonrpc: ProtocolVersion::TwoPointO,
                     id: RequestId::String("1".to_string()),
                     method: "some_method".to_string(),
                     params: None,
                 })
-                .expect("failed serializing test server request")
                 .await
                 .expect("test request failed");
 
