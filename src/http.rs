@@ -77,7 +77,7 @@ impl<C: Connect + Clone + Send + Sync + 'static> Transport for RawClient<C> {
 mod test {
     use serde_json::json;
 
-    use crate::{ProtocolVersion, Request, RequestId};
+    use crate::{ProtocolVersion, Request, RequestId, ResultRes};
 
     use super::*;
 
@@ -122,6 +122,13 @@ mod test {
             .await
             .expect("test request failed");
 
-        println!("{:?}", res);
+        assert_eq!(
+            res,
+            Response(Ok(ResultRes {
+                jsonrpc: ProtocolVersion::TwoPointO,
+                id: RequestId::String("1".to_string()),
+                result: json!(7),
+            }))
+        );
     }
 }

@@ -4,6 +4,7 @@ use async_stream::stream;
 use futures::Stream;
 use tokio::sync::mpsc;
 
+#[allow(dead_code)]
 pub fn mpsc_receiver_stream<T: Unpin>(
     mut c: mpsc::UnboundedReceiver<T>,
 ) -> Pin<Box<impl Stream<Item = T>>> {
@@ -14,6 +15,7 @@ pub fn mpsc_receiver_stream<T: Unpin>(
     })
 }
 
+#[allow(dead_code)]
 #[cfg(unix)]
 mod unix_helpers {
     use super::*;
