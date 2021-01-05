@@ -179,10 +179,6 @@ mod test {
     use serde_json::json;
     use tokio_tungstenite::tungstenite;
 
-    lazy_static::lazy_static! {
-        static ref TEST_MUTEX: tokio::sync::Mutex<bool> = tokio::sync::Mutex::new(false);
-    }
-
     async fn start_jsonrpc_test_server() -> tokio::task::JoinHandle<()> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:3001")
             .await
@@ -278,10 +274,7 @@ mod test {
 
     #[tokio::test]
     async fn it_works() {
-        let guard = TEST_MUTEX.lock().await;
-        if !*guard {
-            start_jsonrpc_test_server().await;
-        }
+        start_jsonrpc_test_server().await;
 
         let ws = Client::new("ws://127.0.0.1:3001")
             .await
@@ -294,7 +287,14 @@ mod test {
             .await
             .expect("failed receiving test notification");
 
-        println!("{:?}", not);
+        assert_eq!(
+            not,
+            Notification {
+                jsonrpc: ProtocolVersion::TwoPointO,
+                method: "test_notification".to_string(),
+                params: Some(vec![json!(16)].into()),
+            }
+        );
 
         for _ in 1..=10 {
             let res: Response = ws
@@ -309,7 +309,14 @@ mod test {
                 .await
                 .expect("test request failed");
 
-            println!("{:?}", res);
+            assert_eq!(
+                res,
+                Response(Ok(ResultRes {
+                    jsonrpc: ProtocolVersion::TwoPointO,
+                    id: RequestId::String("1".to_string()),
+                    result: json!(3),
+                }))
+            );
         }
     }
 }

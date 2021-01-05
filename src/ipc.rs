@@ -242,7 +242,14 @@ mod test {
             .await
             .expect("failed receiving test notification");
 
-        println!("{:?}", not);
+        assert_eq!(
+            not,
+            Notification {
+                jsonrpc: ProtocolVersion::TwoPointO,
+                method: "test_notification".to_string(),
+                params: Some(vec![json!(15)].into()),
+            }
+        );
 
         for _ in 1..=10 {
             let res: Response = c
@@ -255,7 +262,14 @@ mod test {
                 .await
                 .expect("test request failed");
 
-            println!("{:?}", res);
+            assert_eq!(
+                res,
+                Response(Ok(ResultRes {
+                    jsonrpc: ProtocolVersion::TwoPointO,
+                    id: RequestId::String("1".to_string()),
+                    result: json!(16),
+                }))
+            );
         }
     }
 }
