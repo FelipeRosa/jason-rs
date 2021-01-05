@@ -1,6 +1,5 @@
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::{
     net::TcpStream,
@@ -38,7 +37,7 @@ impl Client {
 }
 
 impl Transport for Client {
-    fn request_raw(
+    fn request(
         &self,
         req: Request,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
@@ -53,7 +52,7 @@ impl Transport for Client {
 }
 
 impl NotificationTransport for Client {
-    fn notification_stream<P: DeserializeOwned>(&self) -> Result<NotificationStream<P>> {
+    fn notification_stream(&self) -> Result<NotificationStream> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.client_notify_req_tx.send(tx)?;
 
@@ -177,6 +176,7 @@ mod test {
 
     use super::*;
 
+    use serde_json::json;
     use tokio_tungstenite::tungstenite;
 
     lazy_static::lazy_static! {
@@ -205,7 +205,7 @@ mod test {
                                     serde_json::to_string(&Notification {
                                         jsonrpc: ProtocolVersion::TwoPointO,
                                         method: "test_notification".to_string(),
-                                        params: Some(vec![serde_json::json!(16i32)].into()),
+                                        params: Some(vec![json!(16)].into()),
                                     })
                                     .unwrap(),
                                 ))
@@ -216,7 +216,7 @@ mod test {
                             msg = ws_stream.next() => if let Some(Ok(msg)) = msg {
                                 let msg_body = msg.into_text().expect("expected text messages");
 
-                                let rpc_req: Request::<i32> = serde_json::from_str(&msg_body)
+                                let rpc_req: Request = serde_json::from_str(&msg_body)
                                     .expect("failed to parse JSONRPC message");
 
 
@@ -224,15 +224,24 @@ mod test {
                                     "add" => {
                                         match rpc_req.params {
                                             Some(RequestParams::ByName(params)) => {
-                                                Response::<i32, ()>(Ok(ResultRes {
+                                                let a = params.get("a")
+                                                    .expect("missing 'a'")
+                                                    .as_i64()
+                                                    .expect("expected i64");
+                                                let b = params.get("b")
+                                                    .expect("missing 'b'")
+                                                    .as_i64()
+                                                    .expect("expected i64");
+
+                                                Response(Ok(ResultRes {
                                                     jsonrpc: ProtocolVersion::TwoPointO,
                                                     id: rpc_req.id,
-                                                    result: params.get("a").expect("missing 'a'") + params.get("b").expect("missing 'b'"),
+                                                    result: json!(a + b),
                                                 }))
                                             },
 
                                             _ => {
-                                                Response::<i32, ()>(Err(ErrorRes {
+                                                Response(Err(ErrorRes {
                                                     jsonrpc: ProtocolVersion::TwoPointO,
                                                     id: rpc_req.id,
                                                     code: -32602,
@@ -243,7 +252,7 @@ mod test {
                                         }
                                     }
 
-                                    _ => Response::<i32, ()>(Err(ErrorRes {
+                                    _ => Response(Err(ErrorRes {
                                         jsonrpc: ProtocolVersion::TwoPointO,
                                         id: rpc_req.id,
                                         code: -32601,
@@ -278,7 +287,7 @@ mod test {
             .await
             .expect("failed connecting to jsonrpc test server");
 
-        let not: Notification<i32> = ws
+        let not: Notification = ws
             .notification_stream()
             .expect("failed creating notification stream")
             .next()
@@ -288,14 +297,15 @@ mod test {
         println!("{:?}", not);
 
         for _ in 1..=10 {
-            let res: Response<i32> = ws
-                .request(Request::<i32> {
+            let res: Response = ws
+                .request(Request {
                     jsonrpc: ProtocolVersion::TwoPointO,
                     id: RequestId::String("1".to_string()),
                     method: "add".to_string(),
-                    params: Some(vec![("a".to_string(), 1), ("b".to_string(), 2)].into()),
+                    params: Some(
+                        vec![("a".to_string(), json!(1)), ("b".to_string(), json!(2))].into(),
+                    ),
                 })
-                .expect("failed serializing test server request")
                 .await
                 .expect("test request failed");
 

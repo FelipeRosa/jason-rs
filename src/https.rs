@@ -19,10 +19,10 @@ impl Client {
 }
 
 impl Transport for Client {
-    fn request_raw(
+    fn request(
         &self,
         req: Request,
     ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Response>> + Send + '_>> {
-        self.raw.request_raw(req)
+        self.raw.request(req)
     }
 }

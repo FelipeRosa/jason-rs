@@ -14,6 +14,7 @@ pub mod transport;
 pub mod websocket;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Represents protocol versions.
@@ -113,37 +114,15 @@ impl<'a> Deserialize<'a> for RequestId {
 
 /// Represents request parameters.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum RequestParams<P> {
+pub enum RequestParams {
     /// Request parameters by position.
-    ByPosition(Vec<P>),
+    ByPosition(Vec<Value>),
 
     /// Request parameters by name.
-    ByName(BTreeMap<String, P>),
+    ByName(BTreeMap<String, Value>),
 }
 
-impl<P> RequestParams<P> {
-    /// Maps the parameter values using the given function. Returns Err if any call to f returns Err.
-    pub fn try_map<Q, E, F>(self, mut f: F) -> std::result::Result<RequestParams<Q>, E>
-    where
-        F: FnMut(P) -> std::result::Result<Q, E>,
-    {
-        match self {
-            RequestParams::ByPosition(vs) => vs
-                .into_iter()
-                .map(f)
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map(RequestParams::ByPosition),
-
-            RequestParams::ByName(m) => m
-                .into_iter()
-                .map(|(k, v)| f(v).map(|v| (k, v)))
-                .collect::<std::result::Result<BTreeMap<_, _>, _>>()
-                .map(RequestParams::ByName),
-        }
-    }
-}
-
-impl<P: Serialize> Serialize for RequestParams<P> {
+impl Serialize for RequestParams {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -155,41 +134,31 @@ impl<P: Serialize> Serialize for RequestParams<P> {
     }
 }
 
-impl<'a, P: Deserialize<'a>> Deserialize<'a> for RequestParams<P> {
+impl<'a> Deserialize<'a> for RequestParams {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
-        deserializer.deserialize_any(RequestParamsVisitor::new())
+        deserializer.deserialize_any(RequestParamsVisitor {})
     }
 }
 
-impl<P> From<Vec<(String, P)>> for RequestParams<P> {
-    fn from(vs: Vec<(String, P)>) -> Self {
+impl From<Vec<(String, Value)>> for RequestParams {
+    fn from(vs: Vec<(String, Value)>) -> Self {
         RequestParams::ByName(vs.into_iter().collect())
     }
 }
 
-impl<P> From<Vec<P>> for RequestParams<P> {
-    fn from(vs: Vec<P>) -> Self {
+impl From<Vec<Value>> for RequestParams {
+    fn from(vs: Vec<Value>) -> Self {
         RequestParams::ByPosition(vs)
     }
 }
 
-struct RequestParamsVisitor<P> {
-    _p: std::marker::PhantomData<P>,
-}
+struct RequestParamsVisitor;
 
-impl<P> RequestParamsVisitor<P> {
-    fn new() -> Self {
-        Self {
-            _p: std::marker::PhantomData::default(),
-        }
-    }
-}
-
-impl<'a, P: Deserialize<'a>> serde::de::Visitor<'a> for RequestParamsVisitor<P> {
-    type Value = RequestParams<P>;
+impl<'a> serde::de::Visitor<'a> for RequestParamsVisitor {
+    type Value = RequestParams;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("array or object")
@@ -199,7 +168,7 @@ impl<'a, P: Deserialize<'a>> serde::de::Visitor<'a> for RequestParamsVisitor<P> 
     where
         A: serde::de::SeqAccess<'a>,
     {
-        let vs: Vec<P> =
+        let vs: Vec<Value> =
             Deserialize::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
 
         Ok(RequestParams::ByPosition(vs))
@@ -209,7 +178,7 @@ impl<'a, P: Deserialize<'a>> serde::de::Visitor<'a> for RequestParamsVisitor<P> 
     where
         A: serde::de::MapAccess<'a>,
     {
-        let m: BTreeMap<String, P> =
+        let m: BTreeMap<String, Value> =
             Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
 
         Ok(RequestParams::ByName(m))
@@ -218,46 +187,44 @@ impl<'a, P: Deserialize<'a>> serde::de::Visitor<'a> for RequestParamsVisitor<P> 
 
 /// Represents a request.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct Request<P = serde_json::Value> {
+pub struct Request {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
     pub method: String,
-    pub params: Option<RequestParams<P>>,
+    pub params: Option<RequestParams>,
 }
 
 /// Represents a notification.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct Notification<P = serde_json::Value> {
+pub struct Notification {
     pub jsonrpc: ProtocolVersion,
     pub method: String,
-    pub params: Option<RequestParams<P>>,
+    pub params: Option<RequestParams>,
 }
 
 /// Represents a successful response.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize)]
-pub struct ResultRes<R> {
+pub struct ResultRes {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
-    pub result: R,
+    pub result: Value,
 }
 
 /// Represents a failed response.
 #[derive(Debug, Eq, PartialEq, Clone, Serialize)]
-pub struct ErrorRes<E> {
+pub struct ErrorRes {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
     pub code: i64,
     pub message: String,
-    pub data: Option<E>,
+    pub data: Option<Value>,
 }
 
 /// Represents a response which can be successful or failed.
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Response<R = serde_json::Value, E = serde_json::Value>(
-    std::result::Result<ResultRes<R>, ErrorRes<E>>,
-);
+pub struct Response(std::result::Result<ResultRes, ErrorRes>);
 
-impl<R, E> Response<R, E> {
+impl Response {
     pub fn id(&self) -> &RequestId {
         match self {
             Response(Ok(res)) => &res.id,
@@ -265,20 +232,16 @@ impl<R, E> Response<R, E> {
         }
     }
 
-    pub fn as_result(&self) -> &std::result::Result<ResultRes<R>, ErrorRes<E>> {
+    pub fn as_result(&self) -> &std::result::Result<ResultRes, ErrorRes> {
         &self.0
     }
 
-    pub fn into_result(self) -> std::result::Result<ResultRes<R>, ErrorRes<E>> {
+    pub fn into_result(self) -> std::result::Result<ResultRes, ErrorRes> {
         self.0
     }
 }
 
-impl<R, E> Serialize for Response<R, E>
-where
-    R: Serialize,
-    E: Serialize,
-{
+impl Serialize for Response {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -290,16 +253,12 @@ where
     }
 }
 
-impl<'a, R, E> Deserialize<'a> for Response<R, E>
-where
-    R: Deserialize<'a>,
-    E: Deserialize<'a>,
-{
+impl<'a> Deserialize<'a> for Response {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
-        let raw: RawResponse<R, E> = Deserialize::deserialize(deserializer)?;
+        let raw: RawResponse = Deserialize::deserialize(deserializer)?;
 
         match (raw.result, raw.error) {
             (Some(r), None) => Ok(Response(Ok(ResultRes {
@@ -328,18 +287,18 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-struct RawError<E> {
+struct RawError {
     pub code: i64,
     pub message: String,
-    pub data: Option<E>,
+    pub data: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
-struct RawResponse<R, E> {
+struct RawResponse {
     pub jsonrpc: ProtocolVersion,
     pub id: RequestId,
-    pub result: Option<R>,
-    pub error: Option<RawError<E>>,
+    pub result: Option<Value>,
+    pub error: Option<RawError>,
 }
 
 #[cfg(test)]
@@ -350,10 +309,10 @@ mod tests {
 
     #[test]
     fn serialize_requests() {
-        let req = Request::<i32> {
+        let req = Request {
             jsonrpc: ProtocolVersion::TwoPointO,
             method: "method1".to_string(),
-            params: Some(vec![1, 2].into()),
+            params: Some(vec![json!(1), json!(2)].into()),
             id: RequestId::String("1".to_string()),
         };
         let val = serde_json::to_value(req);
@@ -383,13 +342,7 @@ mod tests {
            }
         });
 
-        #[derive(Debug, Deserialize, Eq, PartialEq)]
-        struct S {
-            pub some_key1: u64,
-            pub some_key2: String,
-        }
-
-        let res: Result<Response<S>, _> = serde_json::from_value(res_json);
+        let res: Result<Response, _> = serde_json::from_value(res_json);
 
         assert!(res.is_ok());
         let res = res.unwrap();
@@ -399,10 +352,10 @@ mod tests {
             Response(Ok(ResultRes {
                 jsonrpc: ProtocolVersion::TwoPointO,
                 id: RequestId::String("1".to_string()),
-                result: S {
-                    some_key1: 1,
-                    some_key2: "a".to_string(),
-                }
+                result: json!({
+                    "some_key1": 1,
+                    "some_key2": "a",
+                })
             }))
         );
     }
@@ -422,13 +375,7 @@ mod tests {
            }
         });
 
-        #[derive(Debug, Deserialize, Eq, PartialEq)]
-        struct S {
-            pub some_key1: u64,
-            pub some_key2: String,
-        }
-
-        let res: Result<Response<(), S>, _> = serde_json::from_value(res_json);
+        let res: Result<Response, _> = serde_json::from_value(res_json);
 
         assert!(res.is_ok());
         let res = res.unwrap();
@@ -440,10 +387,10 @@ mod tests {
                 id: RequestId::String("1".to_string()),
                 code: -1,
                 message: "err".to_string(),
-                data: Some(S {
-                    some_key1: 1,
-                    some_key2: "a".to_string(),
-                })
+                data: Some(json!({
+                    "some_key1": 1,
+                    "some_key2": "a",
+                })),
             }))
         );
     }
