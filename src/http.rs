@@ -7,6 +7,8 @@ use std::str::FromStr;
 
 use crate::{transport::Transport, Request, Response};
 
+const USER_AGENT: &str = concat!("jason.rs/", std::env!("CARGO_PKG_VERSION"));
+
 /// HTTP client.
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -56,7 +58,7 @@ impl<C: Connect + Clone + Send + Sync + 'static> Transport for RawClient<C> {
             let req_body = serde_json::to_string(&req)?;
 
             let http_req = hyper::Request::builder()
-                .header(hyper::header::USER_AGENT, "jason.rs/0.1.0")
+                .header(hyper::header::USER_AGENT, USER_AGENT)
                 .header(hyper::header::CONTENT_TYPE, "application/json")
                 .method(hyper::Method::POST)
                 .uri(req_uri)
