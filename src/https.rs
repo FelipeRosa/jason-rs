@@ -5,6 +5,7 @@ use hyper_tls::HttpsConnector;
 use crate::{http::RawClient, transport::Transport, Request, Response};
 
 /// HTTPS client.
+#[derive(Debug, Clone)]
 pub struct Client {
     raw: RawClient<HttpsConnector<HttpConnector>>,
 }
